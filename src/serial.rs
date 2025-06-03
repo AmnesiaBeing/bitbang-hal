@@ -1,21 +1,21 @@
- //! Serial communication (USART)
- //!
- //! This implementation consumes the following hardware resources:
- //! - Output GPIO pin for transmission (TX)
- //! - Input GPIO pin for reception (RX)
- //! - Blocking delay provider (implements embedded_hal::delay::DelayNs)
- //!
- //! The delay provider must be configured to twice the desired communication frequency.
- //!
+
+//! Serial communication (USART)
+//!
+//! This implementation consumes the following hardware resources:
+//! - Output GPIO pin for transmission (TX)
+//! - Input GPIO pin for reception (RX)
+//! - Blocking delay provider (implements embedded_hal::delay::DelayNs)
+//!
+//! The delay provider must be configured to twice the desired communication frequency.
+//!
 
 use embedded_hal::{
     delay::DelayNs,
     digital::{InputPin, OutputPin},
 };
+#[cfg(feature = "embedded-io")]
 use embedded_io::{
-    ErrorType as EmbeddedIoErrorType,
-    Read as EmbeddedIoRead,
-    Write as EmbeddedIoWrite,
+    ErrorType as EmbeddedIoErrorType, Read as EmbeddedIoRead, Write as EmbeddedIoWrite,
 };
 
 /// Serial communication error type
@@ -25,15 +25,14 @@ pub enum Error<E> {
     Bus(E),
 }
 
+#[cfg(feature = "embedded-io")]
 impl<E: core::fmt::Debug> embedded_io::Error for Error<E> {
     fn kind(&self) -> embedded_io::ErrorKind {
         embedded_io::ErrorKind::Other
     }
 }
 
-// --- embedded-io trait implementations ---
-
-
+#[cfg(feature = "embedded-io")]
 impl<TX, RX, Delay, E> EmbeddedIoErrorType for Serial<TX, RX, Delay>
 where
     TX: OutputPin<Error = E>,
@@ -44,6 +43,7 @@ where
     type Error = Error<E>;
 }
 
+#[cfg(feature = "embedded-io")]
 impl<TX, RX, Delay, E> EmbeddedIoRead for Serial<TX, RX, Delay>
 where
     TX: OutputPin<Error = E>,
@@ -74,6 +74,7 @@ where
     }
 }
 
+#[cfg(feature = "embedded-io")]
 impl<TX, RX, Delay, E> EmbeddedIoWrite for Serial<TX, RX, Delay>
 where
     TX: OutputPin<Error = E>,
@@ -110,6 +111,7 @@ where
 }
 
 /// Bit banging serial communication (USART) device
+#[cfg_attr(not(feature = "embedded-io"), allow(dead_code))]
 pub struct Serial<TX, RX, Delay>
 where
     TX: OutputPin,
@@ -133,6 +135,7 @@ where
     }
 
     #[inline]
+    #[cfg_attr(not(feature = "embedded-io"), allow(dead_code))]
     fn wait_for_delay(&mut self) {
         self.delay.delay_ns(1);
     }

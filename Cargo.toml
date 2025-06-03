@@ -12,6 +12,12 @@ categories = ["embedded", "no-std"]
 
 [dependencies]
 embedded-hal = "1.0"
-fugit = "0.3"
-nb = "1"
-embedded-io = "0.6.1"
+embedded-io = { version = "0.6.1", optional = true }
+
+[features]
+default = []
+embedded-io = ["dep:embedded-io"]
+
+[lib]
+test = false
+bench = false

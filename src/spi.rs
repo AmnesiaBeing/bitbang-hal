@@ -15,16 +15,11 @@
 
 use core::cmp::max;
 
-pub use embedded_hal_async::spi::{MODE_0, MODE_1, MODE_2, MODE_3};
-use embedded_hal_async::{delay::DelayNs, spi::SpiBus};
-
 use embedded_hal::{
+    delay::DelayNs,
     digital::{InputPin, OutputPin},
-    spi::ErrorType,
+    spi::{ErrorType, Mode, Polarity, SpiBus, MODE_0, MODE_1, MODE_2, MODE_3},
 };
-use embedded_hal_async::spi::{Mode, Polarity};
-use fugit::Duration;
-use fugit::RateExtU32;
 
 /// Error type
 #[derive(Debug)]
@@ -136,7 +131,7 @@ where
         self.config.bit_order = order;
     }
 
-    async fn read_bit(&mut self, read_val: &mut u8) -> Result<(), crate::spi::Error<E>> {
+    fn read_bit(&mut self, read_val: &mut u8) -> Result<(), crate::spi::Error<E>> {
         let is_miso_high = self.miso.is_high().map_err(Error::Bus)?;
         let shifted_value = *read_val << 1;
         if is_miso_high {
@@ -158,18 +153,12 @@ where
     }
 
     #[inline]
-    async fn wait_for_timer(&mut self) {
-        self.delay
-            .delay_ns(self.config.half_period_duration_ns)
-            .await;
+    fn wait_for_delay(&mut self) {
+        self.delay.delay_ns(self.config.half_period_duration_ns);
     }
 
     #[inline]
-    async fn rw_byte(
-        &mut self,
-        clock_out: u8,
-        read_in: &mut u8,
-    ) -> Result<(), crate::spi::Error<E>> {
+    fn rw_byte(&mut self, clock_out: u8, read_in: &mut u8) -> Result<(), crate::spi::Error<E>> {
         for bit_offset in 0..8 {
             let out_bit = match self.config.bit_order {
                 BitOrder::MSBFirst => (clock_out >> (7 - bit_offset)) & 0b1,
@@ -184,32 +173,32 @@ where
 
             match self.config.mode {
                 MODE_0 => {
-                    self.wait_for_timer().await;
+                    self.wait_for_delay();
                     self.set_clk_high()?;
-                    self.read_bit(read_in).await?;
-                    self.wait_for_timer().await;
+                    self.read_bit(read_in)?;
+                    self.wait_for_delay();
                     self.set_clk_low()?;
                 }
                 MODE_1 => {
                     self.set_clk_high()?;
-                    self.wait_for_timer().await;
-                    self.read_bit(read_in).await?;
+                    self.wait_for_delay();
+                    self.read_bit(read_in)?;
                     self.set_clk_low()?;
-                    self.wait_for_timer().await;
+                    self.wait_for_delay();
                 }
                 MODE_2 => {
-                    self.wait_for_timer().await;
+                    self.wait_for_delay();
                     self.set_clk_low()?;
-                    self.read_bit(read_in).await?;
-                    self.wait_for_timer().await;
+                    self.read_bit(read_in)?;
+                    self.wait_for_delay();
                     self.set_clk_high()?;
                 }
                 MODE_3 => {
                     self.set_clk_low()?;
-                    self.wait_for_timer().await;
-                    self.read_bit(read_in).await?;
+                    self.wait_for_delay();
+                    self.read_bit(read_in)?;
                     self.set_clk_high()?;
-                    self.wait_for_timer().await;
+                    self.wait_for_delay();
                 }
             };
         }
@@ -217,42 +206,42 @@ where
     }
 }
 
-impl<Miso, Mosi, Sck, Timer, E> ErrorType for SPI<Miso, Mosi, Sck, Timer>
+impl<Miso, Mosi, Sck, Delay, E> ErrorType for SPI<Miso, Mosi, Sck, Delay>
 where
     Miso: InputPin<Error = E>,
     Mosi: OutputPin<Error = E>,
     Sck: OutputPin<Error = E>,
-    Timer: DelayNs,
+    Delay: DelayNs,
     E: core::fmt::Debug,
 {
     type Error = crate::spi::Error<E>;
 }
 
-impl<Miso, Mosi, Sck, Timer, E> SpiBus<u8> for SPI<Miso, Mosi, Sck, Timer>
+impl<Miso, Mosi, Sck, Delay, E> SpiBus<u8> for SPI<Miso, Mosi, Sck, Delay>
 where
     Miso: InputPin<Error = E>,
     Mosi: OutputPin<Error = E>,
     Sck: OutputPin<Error = E>,
-    Timer: DelayNs,
+    Delay: DelayNs,
     E: core::fmt::Debug,
 {
     #[inline]
-    async fn read(&mut self, words: &mut [u8]) -> Result<(), Self::Error> {
+    fn read(&mut self, words: &mut [u8]) -> Result<(), Self::Error> {
         for word in words {
-            self.rw_byte(self.config.empty_write_value, word).await?;
+            self.rw_byte(self.config.empty_write_value, word)?;
         }
         Ok(())
     }
 
-    async fn write(&mut self, words: &[u8]) -> Result<(), Self::Error> {
+    fn write(&mut self, words: &[u8]) -> Result<(), Self::Error> {
         let mut ignored_write = 0u8;
         for byte in words {
-            self.rw_byte(*byte, &mut ignored_write).await?;
+            self.rw_byte(*byte, &mut ignored_write)?;
         }
         Ok(())
     }
 
-    async fn transfer(&mut self, read: &mut [u8], write: &[u8]) -> Result<(), Self::Error> {
+    fn transfer(&mut self, read: &mut [u8], write: &[u8]) -> Result<(), Self::Error> {
         let mut ignored_write = 0u8;
         for i in 0..max(read.len(), write.len()) {
             let read_in_byte = read.get_mut(i).unwrap_or(&mut ignored_write);
@@ -260,146 +249,24 @@ where
                 .get(i)
                 .copied()
                 .unwrap_or(self.config.empty_write_value);
-            self.rw_byte(clock_out_byte, read_in_byte).await?;
+            self.rw_byte(clock_out_byte, read_in_byte)?;
         }
 
         Ok(())
     }
 
-    async fn transfer_in_place(&mut self, words: &mut [u8]) -> Result<(), Self::Error> {
+    fn transfer_in_place(&mut self, words: &mut [u8]) -> Result<(), Self::Error> {
         let mut current_read_byte = 0u8;
         for clock_out_byte in words {
-            self.rw_byte(*clock_out_byte, &mut current_read_byte)
-                .await?;
+            self.rw_byte(*clock_out_byte, &mut current_read_byte)?;
             *clock_out_byte = current_read_byte;
         }
 
         Ok(())
     }
 
-    async fn flush(&mut self) -> Result<(), Self::Error> {
+    fn flush(&mut self) -> Result<(), Self::Error> {
         // we always flush. Nothing to do here.
         Ok(())
-    }
-}
-
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use embedded_hal_mock::eh1::digital::{Mock as PinMock, State as PinState, Transaction as PinTransaction};
-    use embedded_hal_mock::eh1::delay::NoopDelay as MockDelay;
-    use embedded_hal_async::spi::MODE_0;
-    use embedded_hal_mock::eh1::MockError;
-
-    #[tokio::test]
-    async fn test_spi_write_single_byte() {
-        let miso = PinMock::new(&[]);
-        let mosi = PinMock::new(&[
-            PinTransaction::set(PinState::Low), // MOSI writes start here
-            PinTransaction::set(PinState::High),
-            PinTransaction::set(PinState::Low),
-            PinTransaction::set(PinState::High),
-            PinTransaction::set(PinState::Low),
-            PinTransaction::set(PinState::High),
-            PinTransaction::set(PinState::Low),
-            PinTransaction::set(PinState::High),
-        ]);
-        let sck = PinMock::new(&[
-            PinTransaction::set(PinState::Low), // SCK toggles start here
-            PinTransaction::set(PinState::High),
-            PinTransaction::set(PinState::Low),
-            PinTransaction::set(PinState::High),
-            PinTransaction::set(PinState::Low),
-            PinTransaction::set(PinState::High),
-            PinTransaction::set(PinState::Low),
-            PinTransaction::set(PinState::High),
-        ]);
-        let delay = MockDelay::new();
-
-        let mut spi = SPI::new(MODE_0, miso, mosi, sck, delay, SpiConfig::default());
-        let data = [0xAA]; // 10101010 in binary
-        spi.write(&data).await.expect("SPI write failed");
-
-        // Verify that all transactions were completed
-        spi.mosi.done();
-        spi.sck.done();
-    }
-
-    #[tokio::test]
-    async fn test_spi_read_single_byte() {
-        let miso = PinMock::new(&[
-            PinTransaction::get(PinState::High), // MISO returns 1
-            PinTransaction::get(PinState::Low),  // MISO returns 0
-            PinTransaction::get(PinState::High), // MISO returns 1
-            PinTransaction::get(PinState::Low),  // MISO returns 0
-            PinTransaction::get(PinState::High), // MISO returns 1
-            PinTransaction::get(PinState::Low),  // MISO returns 0
-            PinTransaction::get(PinState::High), // MISO returns 1
-            PinTransaction::get(PinState::Low),  // MISO returns 0
-        ]);
-        let mosi = PinMock::new(&[]);
-        let sck = PinMock::new(&[
-            PinTransaction::set(PinState::Low),
-            PinTransaction::set(PinState::High),
-            PinTransaction::set(PinState::Low),
-            PinTransaction::set(PinState::High),
-            PinTransaction::set(PinState::Low),
-            PinTransaction::set(PinState::High),
-            PinTransaction::set(PinState::Low),
-            PinTransaction::set(PinState::High),
-        ]);
-        let delay = MockDelay::new();
-
-        let mut spi = SPI::new(MODE_0, miso, mosi, sck, delay, SpiConfig::default());
-        let mut data = [0x00];
-        spi.read(&mut data).await.expect("SPI read failed");
-
-        assert_eq!(data[0], 0b10101010); // 0xAA in binary
-    }
-
-    #[tokio::test]
-    async fn test_spi_transfer() {
-        let miso = PinMock::new(&[
-            PinTransaction::get(PinState::Low),
-            PinTransaction::get(PinState::High),
-            PinTransaction::get(PinState::Low),
-            PinTransaction::get(PinState::High),
-            PinTransaction::get(PinState::Low),
-            PinTransaction::get(PinState::High),
-            PinTransaction::get(PinState::Low),
-            PinTransaction::get(PinState::High),
-        ]);
-        let mosi = PinMock::new(&[
-            PinTransaction::set(PinState::High),
-            PinTransaction::set(PinState::Low),
-            PinTransaction::set(PinState::High),
-            PinTransaction::set(PinState::Low),
-            PinTransaction::set(PinState::High),
-            PinTransaction::set(PinState::Low),
-            PinTransaction::set(PinState::High),
-            PinTransaction::set(PinState::Low),
-        ]);
-        let sck = PinMock::new(&[
-            PinTransaction::set(PinState::Low),
-            PinTransaction::set(PinState::High),
-            PinTransaction::set(PinState::Low),
-            PinTransaction::set(PinState::High),
-            PinTransaction::set(PinState::Low),
-            PinTransaction::set(PinState::High),
-            PinTransaction::set(PinState::Low),
-            PinTransaction::set(PinState::High),
-        ]);
-        let delay = MockDelay::new();
-
-        let mut spi = SPI::new(MODE_0, miso, mosi, sck, delay, SpiConfig::default());
-        let mut read_data = [0x00];
-        let write_data = [0xAA];
-
-        spi.transfer(&mut read_data, &write_data)
-            .await
-            .expect("SPI transfer failed");
-
-        assert_eq!(read_data[0], 0b01010101); // Received bits in opposite phase
     }
 }

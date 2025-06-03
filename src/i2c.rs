@@ -23,7 +23,7 @@
 
 use embedded_hal::delay::DelayNs;
 use embedded_hal::digital::{InputPin, OutputPin};
-use embedded_hal::i2c::{I2c, Operation, ErrorType};
+use embedded_hal::i2c::{ErrorType, I2c, Operation};
 
 /// I2C error
 #[derive(Debug, Eq, PartialEq)]
@@ -40,7 +40,9 @@ impl<E: core::fmt::Debug> embedded_hal::i2c::Error for Error<E> {
     fn kind(&self) -> embedded_hal::i2c::ErrorKind {
         match self {
             Error::Bus(_) => embedded_hal::i2c::ErrorKind::Other,
-            Error::NoAck => embedded_hal::i2c::ErrorKind::NoAcknowledge(embedded_hal::i2c::NoAcknowledgeSource::Unknown),
+            Error::NoAck => embedded_hal::i2c::ErrorKind::NoAcknowledge(
+                embedded_hal::i2c::NoAcknowledgeSource::Unknown,
+            ),
             Error::InvalidData => embedded_hal::i2c::ErrorKind::Other,
         }
     }
