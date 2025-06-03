@@ -15,19 +15,3 @@ embedded-hal = "1.0"
 fugit = "0.3"
 nb = "1"
 embedded-io = "0.6.1"
-
-# [dependencies.embedded-hal-async]
-# version = "1"
-
-# [dev-dependencies.stm32f1xx-hal]
-# version = "0.10.0"
-# features = ["stm32f103", "rt", "medium"]
-
-# [dev-dependencies]
-# cortex-m = "0.7"
-# cortex-m-rt = "0.7"
-# panic-halt = "0.2.0"
-# eeprom24x = "0.7.1"
-# lm75 = "1"
-# embedded-hal-mock = { version = "0.11.1", features = ["eh1", "embedded-hal-async"] }
-# tokio = { version = "1.43.0", features = ["macros", "rt"] }
