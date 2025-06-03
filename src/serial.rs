@@ -1,4 +1,3 @@
-
 //! Serial communication (USART)
 //!
 //! This implementation consumes the following hardware resources:

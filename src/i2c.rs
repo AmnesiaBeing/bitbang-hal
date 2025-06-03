@@ -14,7 +14,7 @@
 
   ## Example
 
-  ```no_run
+  ```rust,ignore
     let i2c = bitbang_hal::i2c::I2cBB::new(scl, sda, tmr);
     let mut sensor = Lm75::new(i2c, SlaveAddr::default());
     let temp = sensor.read_temperature().unwrap();

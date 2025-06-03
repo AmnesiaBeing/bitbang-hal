@@ -18,6 +18,5 @@ embedded-io = { version = "0.6.1", optional = true }
 default = []
 embedded-io = ["dep:embedded-io"]
 
-[lib]
-test = false
-bench = false
+[dev-dependencies]
+embedded-hal-mock = { version = "0.11.1", features = ["eh1"] }

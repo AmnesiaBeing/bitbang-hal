@@ -270,3 +270,144 @@ where
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use embedded_hal::spi::MODE_0;
+    use embedded_hal_mock::eh1::delay::NoopDelay as MockDelay;
+    use embedded_hal_mock::eh1::digital::{
+        Mock as PinMock, State as PinState, Transaction as PinTransaction,
+    };
+    use std::vec::Vec;
+
+    fn waveform(string: &str) -> Vec<PinState> {
+        let mut transactions = Vec::new();
+        let mut last_state = None;
+        let mut last_action = string.chars().next().unwrap();
+        for step in string.chars() {
+            let step = if step == '.' { last_action } else { step };
+            match step {
+                '0' => {
+                    transactions.push(PinState::Low);
+                    last_state = Some(PinState::Low);
+                }
+                '1' => {
+                    transactions.push(PinState::High);
+                    last_state = Some(PinState::High);
+                }
+                'p' | 'P' => {
+                    let next_state = if last_state == Some(PinState::Low) {
+                        PinState::High
+                    } else {
+                        PinState::Low
+                    };
+                    transactions.push(next_state);
+                    last_state = Some(next_state);
+                }
+                'n' | 'N' => {
+                    let next_state = if last_state == Some(PinState::High) {
+                        PinState::Low
+                    } else {
+                        PinState::High
+                    };
+                    transactions.push(next_state);
+                    last_state = Some(next_state);
+                }
+                _ => panic!("Invalid binary literal"),
+            };
+            last_action = step;
+        }
+        transactions
+    }
+
+    #[test]
+    fn test_states() {
+        let res = waveform("p..");
+        assert_eq!(res, vec![PinState::Low, PinState::High, PinState::Low]);
+
+        let res = waveform("P..");
+        assert_eq!(res, vec![PinState::Low, PinState::High, PinState::Low]);
+
+        let res = waveform("n..");
+        assert_eq!(res, vec![PinState::High, PinState::Low, PinState::High]);
+
+        let res = waveform("N..");
+        assert_eq!(res, vec![PinState::High, PinState::Low, PinState::High]);
+
+        let res = waveform("n.0");
+        assert_eq!(res, vec![PinState::High, PinState::Low, PinState::Low]);
+    }
+
+    fn input_waveform(string: &str) -> Vec<PinTransaction> {
+        waveform(string)
+            .into_iter()
+            .map(PinTransaction::get)
+            .collect()
+    }
+
+    fn output_waveform(string: &str) -> Vec<PinTransaction> {
+        waveform(string)
+            .into_iter()
+            .map(PinTransaction::set)
+            .collect()
+    }
+
+    #[test]
+    fn test_spi_read_single_byte() {
+        let miso = PinMock::new(&input_waveform("10101010"));
+        // write default value (0x00) to mosi
+        let mosi = PinMock::new(&output_waveform("00000000"));
+        let sck = PinMock::new(&output_waveform("01010101010101010"));
+        let delay = MockDelay::new();
+
+        let mut spi = SPI::new(MODE_0, miso, mosi, sck, delay, SpiConfig::default());
+        let mut data = [0x00];
+        spi.read(&mut data).expect("SPI read failed");
+
+        spi.mosi.done();
+        spi.miso.done();
+        spi.sck.done();
+        assert_eq!(data[0], 0b10101010);
+    }
+
+    #[test]
+    fn test_spi_write_single_byte() {
+        // this is ignored when reading
+        let miso = PinMock::new(&input_waveform("00000000"));
+        let mosi = PinMock::new(&output_waveform("01010101"));
+        let sck = PinMock::new(&output_waveform("01010101010101010"));
+        let delay = MockDelay::new();
+
+        let mut spi = SPI::new(MODE_0, miso, mosi, sck, delay, SpiConfig::default());
+        let data = [0b01010101];
+        spi.write(&data).expect("SPI write failed");
+
+        // Verify that all transactions were completed
+        spi.mosi.done();
+        spi.sck.done();
+        spi.miso.done();
+    }
+
+    /// Based on https://www.analog.com/en/resources/analog-dialogue/articles/introduction-to-spi-interface.html
+    /// Figure https://www.analog.com/en/_/media/images/analog-dialogue/en/volume-52/number-3/articles/introduction-to-spi-interface/205973_fig_02.png?la=en&rev=c19f52f7fc014bbda34df6bf7c2a18fe&sc_lang=en
+    #[test]
+    fn analog_com_example_figure_2() {
+        let miso = PinMock::new(&input_waveform("10111010"));
+        let mosi = PinMock::new(&output_waveform("10100101"));
+        let sck = PinMock::new(&output_waveform("01010101010101010"));
+        let delay = MockDelay::new();
+
+        let mut spi = SPI::new(MODE_0, miso, mosi, sck, delay, SpiConfig::default());
+        let mut read_data = [0x00];
+        let write_data = [0xA5];
+
+        spi.transfer(&mut read_data, &write_data)
+            .expect("SPI transfer failed");
+
+        spi.miso.done();
+        spi.mosi.done();
+        spi.sck.done();
+        assert_eq!(read_data[0], 0xBA); // Received bits in opposite phase
+    }
+}
