@@ -247,3 +247,135 @@ where
         self.raw_i2c_stop()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use embedded_hal::i2c::{I2c, Operation};
+    use embedded_hal_mock::eh1::delay::NoopDelay as MockDelay;
+    use embedded_hal_mock::eh1::digital::{
+        Mock as PinMock, State as PinState, Transaction as PinTransaction,
+    };
+    use std::vec::Vec;
+
+    // No need to implement Debug for MockError; use PinMock without generics.
+
+    fn pin_transactions(states: &[PinState]) -> Vec<PinTransaction> {
+        states.iter().map(|&s| PinTransaction::set(s)).collect()
+    }
+
+    #[test]
+    fn test_raw_i2c_start_and_stop() {
+        let scl = PinMock::new(&pin_transactions(&[
+            PinState::High, // set_scl_high
+            PinState::Low,  // set_scl_low
+            PinState::High, // set_scl_high (stop)
+        ]));
+        let sda = PinMock::new(&pin_transactions(&[
+            PinState::High, // set_sda_high
+            PinState::Low,  // set_sda_low
+            PinState::High, // set_sda_high (stop)
+        ]));
+        let clk = MockDelay::new();
+
+        let mut i2c = I2cBB::new(scl, sda, clk);
+        i2c.raw_i2c_start().expect("start failed");
+        i2c.raw_i2c_stop().expect("stop failed");
+
+        i2c.scl.done();
+        i2c.sda.done();
+    }
+
+    #[test]
+    fn test_write_and_ack() {
+        // 0b10101010
+        let scl = PinMock::new(&vec![
+            // Each bit: set_scl_high, set_scl_low, set_sda_low after clock
+            PinTransaction::set(PinState::High), // bit 7 clock high
+            PinTransaction::set(PinState::Low),  // bit 7 clock low
+            PinTransaction::set(PinState::High), // bit 6 clock high
+            PinTransaction::set(PinState::Low),  // bit 6 clock low
+            PinTransaction::set(PinState::High), // bit 5 clock high
+            PinTransaction::set(PinState::Low),  // bit 5 clock low
+            PinTransaction::set(PinState::High), // bit 4 clock high
+            PinTransaction::set(PinState::Low),  // bit 4 clock low
+            PinTransaction::set(PinState::High), // bit 3 clock high
+            PinTransaction::set(PinState::Low),  // bit 3 clock low
+            PinTransaction::set(PinState::High), // bit 2 clock high
+            PinTransaction::set(PinState::Low),  // bit 2 clock low
+            PinTransaction::set(PinState::High), // bit 1 clock high
+            PinTransaction::set(PinState::Low),  // bit 1 clock low
+            PinTransaction::set(PinState::High), // bit 0 clock high
+            PinTransaction::set(PinState::Low),  // bit 0 clock low
+        ]);
+        let sda = PinMock::new(&vec![
+            // Each bit: set_sda_high/low, set_sda_low after clock
+            PinTransaction::set(PinState::High), // 1
+            PinTransaction::set(PinState::Low),
+            PinTransaction::set(PinState::Low), // 0
+            PinTransaction::set(PinState::Low),
+            PinTransaction::set(PinState::High), // 1
+            PinTransaction::set(PinState::Low),
+            PinTransaction::set(PinState::Low), // 0
+            PinTransaction::set(PinState::Low),
+            PinTransaction::set(PinState::High), // 1
+            PinTransaction::set(PinState::Low),
+            PinTransaction::set(PinState::Low), // 0
+            PinTransaction::set(PinState::Low),
+            PinTransaction::set(PinState::High), // 1
+            PinTransaction::set(PinState::Low),
+            PinTransaction::set(PinState::Low), // 0
+            PinTransaction::set(PinState::Low),
+        ]);
+        let clk = MockDelay::new();
+
+        let mut i2c = I2cBB::new(scl, sda, clk);
+        i2c.i2c_write_byte(0b10101010).expect("write failed");
+        i2c.scl.done();
+        i2c.sda.done();
+    }
+
+    #[test]
+    fn test_i2c_trait_write() {
+        // Use dummy pins that do nothing and always succeed.
+        use core::convert::Infallible;
+        struct DummyPin;
+        impl embedded_hal::digital::ErrorType for DummyPin {
+            type Error = Infallible;
+        }
+        impl embedded_hal::digital::OutputPin for DummyPin {
+            fn set_high(
+                &mut self,
+            ) -> Result<(), <Self as embedded_hal::digital::ErrorType>::Error> {
+                Ok(())
+            }
+            fn set_low(&mut self) -> Result<(), <Self as embedded_hal::digital::ErrorType>::Error> {
+                Ok(())
+            }
+        }
+        impl embedded_hal::digital::InputPin for DummyPin {
+            fn is_high(
+                &mut self,
+            ) -> Result<bool, <Self as embedded_hal::digital::ErrorType>::Error> {
+                Ok(false)
+            }
+            fn is_low(
+                &mut self,
+            ) -> Result<bool, <Self as embedded_hal::digital::ErrorType>::Error> {
+                Ok(true)
+            }
+        }
+        struct DummyDelay;
+        impl embedded_hal::delay::DelayNs for DummyDelay {
+            fn delay_ns(&mut self, _ns: u32) {}
+        }
+
+        let scl = DummyPin;
+        let sda = DummyPin;
+        let clk = DummyDelay;
+
+        let mut i2c = I2cBB::new(scl, sda, clk);
+        let mut ops = [Operation::Write(&[0xAB])];
+        I2c::transaction(&mut &mut i2c, 0x50, &mut ops).expect("i2c write failed");
+    }
+}
