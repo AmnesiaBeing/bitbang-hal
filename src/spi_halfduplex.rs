@@ -256,6 +256,8 @@ where
     }
 }
 
+/// A Full-Duplex SPI implementation, takes 3 pins, and a timer running at 2x
+/// the desired SPI frequency.
 pub struct SPIDevice<Mosi, Sck, Cs, Delay>
 where
     Mosi: OutputPin,
@@ -298,17 +300,17 @@ where
     }
 
     fn transfer(&mut self, read: &mut [u8], write: &[u8]) -> Result<(), Self::Error> {
-        self.transaction(&mut [embedded_hal::spi::Operation::Transfer(read, core::write)])
+        unimplemented!()
     }
     fn transfer_in_place(&mut self, buf: &mut [u8]) -> Result<(), Self::Error> {
-        self.transaction(&mut [embedded_hal::spi::Operation::TransferInPlace(buf)])
+        unimplemented!()
     }
 
     fn transaction(
         &mut self,
         operations: &mut [embedded_hal::spi::Operation<'_, u8>],
     ) -> Result<(), Self::Error> {
-        todo!()
+        unimplemented!()
     }
 }
 
