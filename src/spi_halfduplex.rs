@@ -256,8 +256,7 @@ where
     }
 }
 
-/// A Full-Duplex SPI implementation, takes 3 pins, and a timer running at 2x
-/// the desired SPI frequency.
+/// An SPI Device
 pub struct SPIDevice<Mosi, Sck, Cs, Delay>
 where
     Mosi: OutputPin,
@@ -270,6 +269,127 @@ where
     cs: Cs,
     delay: Delay,
     config: SpiConfig,
+}
+
+impl<Mosi, Sck, Cs, Delay, E> SPIDevice<Mosi, Sck, Cs, Delay>
+where
+    Mosi: OutputPin<Error = E>,
+    Sck: OutputPin<Error = E>,
+    Cs: OutputPin<Error = E>,
+    Delay: DelayNs,
+{
+    /// Create instance
+    pub fn new(
+        mode: Mode,
+        mosi: Mosi,
+        sck: Sck,
+        cs: Cs,
+        delay: Delay,
+        spi_config: SpiConfig,
+    ) -> Self {
+        let mut device = SPIDevice {
+            mosi,
+            sck,
+            cs,
+            delay,
+            config: spi_config,
+        };
+
+        match mode.polarity {
+            Polarity::IdleLow => device.sck.set_low(),
+            Polarity::IdleHigh => device.sck.set_high(),
+        }
+        .unwrap_or(());
+
+        device
+    }
+
+    /// Set transmission bit order
+    pub fn with_bit_order(&mut self, order: BitOrder) {
+        self.config.bit_order = order;
+    }
+
+    fn read_bit(&mut self, read_val: &mut u8) -> Result<(), crate::spi_halfduplex::Error<E>> {
+        *read_val = 1;
+        Ok(())
+    }
+
+    #[inline]
+    fn set_clk_high(&mut self) -> Result<(), crate::spi_halfduplex::Error<E>> {
+        self.sck.set_high().map_err(Error::Bus)
+    }
+
+    #[inline]
+    fn set_clk_low(&mut self) -> Result<(), crate::spi_halfduplex::Error<E>> {
+        self.sck.set_low().map_err(Error::Bus)
+    }
+
+    #[inline]
+    fn set_cs_high(&mut self) -> Result<(), crate::spi_halfduplex::Error<E>> {
+        self.cs.set_high().map_err(Error::Bus)
+    }
+
+    #[inline]
+    fn set_cs_low(&mut self) -> Result<(), crate::spi_halfduplex::Error<E>> {
+        self.cs.set_low().map_err(Error::Bus)
+    }
+
+    #[inline]
+    fn wait_for_delay(&mut self) {
+        self.delay.delay_ns(self.config.half_period_duration_ns);
+    }
+
+    #[inline]
+    fn rw_byte(
+        &mut self,
+        clock_out: u8,
+        read_in: &mut u8,
+    ) -> Result<(), crate::spi_halfduplex::Error<E>> {
+        for bit_offset in 0..8 {
+            let out_bit = match self.config.bit_order {
+                BitOrder::MSBFirst => (clock_out >> (7 - bit_offset)) & 0b1,
+                BitOrder::LSBFirst => (clock_out >> bit_offset) & 0b1,
+            };
+
+            if out_bit == 1 {
+                self.mosi.set_high().map_err(Error::Bus)?;
+            } else {
+                self.mosi.set_low().map_err(Error::Bus)?;
+            }
+
+            match self.config.mode {
+                MODE_0 => {
+                    self.wait_for_delay();
+                    self.set_clk_high()?;
+                    self.read_bit(read_in)?;
+                    self.wait_for_delay();
+                    self.set_clk_low()?;
+                }
+                MODE_1 => {
+                    self.set_clk_high()?;
+                    self.wait_for_delay();
+                    self.read_bit(read_in)?;
+                    self.set_clk_low()?;
+                    self.wait_for_delay();
+                }
+                MODE_2 => {
+                    self.wait_for_delay();
+                    self.set_clk_low()?;
+                    self.read_bit(read_in)?;
+                    self.wait_for_delay();
+                    self.set_clk_high()?;
+                }
+                MODE_3 => {
+                    self.set_clk_low()?;
+                    self.wait_for_delay();
+                    self.read_bit(read_in)?;
+                    self.set_clk_high()?;
+                    self.wait_for_delay();
+                }
+            };
+        }
+        Ok(())
+    }
 }
 
 impl<Mosi, Sck, Cs, Delay, E> ErrorType for SPIDevice<Mosi, Sck, Cs, Delay>
@@ -296,7 +416,15 @@ where
     }
 
     fn write(&mut self, buf: &[u8]) -> Result<(), Self::Error> {
-        self.transaction(&mut [embedded_hal::spi::Operation::Write(buf)])
+        // self.transaction(&mut [embedded_hal::spi::Operation::Write(buf)])
+        self.set_cs_low()?;
+        self.delay.delay_ns(self.config.half_period_duration_ns);
+        let mut ignored_write = 0u8;
+        for byte in buf {
+            self.rw_byte(*byte, &mut ignored_write)?;
+        }
+        self.set_cs_high()?;
+        Ok(())
     }
 
     fn transfer(&mut self, read: &mut [u8], write: &[u8]) -> Result<(), Self::Error> {
