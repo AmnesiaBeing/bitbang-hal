@@ -427,16 +427,16 @@ where
         Ok(())
     }
 
-    fn transfer(&mut self, read: &mut [u8], write: &[u8]) -> Result<(), Self::Error> {
+    fn transfer(&mut self, _read: &mut [u8], _write: &[u8]) -> Result<(), Self::Error> {
         unimplemented!()
     }
-    fn transfer_in_place(&mut self, buf: &mut [u8]) -> Result<(), Self::Error> {
+    fn transfer_in_place(&mut self, _buf: &mut [u8]) -> Result<(), Self::Error> {
         unimplemented!()
     }
 
     fn transaction(
         &mut self,
-        operations: &mut [embedded_hal::spi::Operation<'_, u8>],
+        _operations: &mut [embedded_hal::spi::Operation<'_, u8>],
     ) -> Result<(), Self::Error> {
         unimplemented!()
     }

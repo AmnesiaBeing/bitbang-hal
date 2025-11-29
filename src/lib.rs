@@ -10,7 +10,7 @@
 #![cfg_attr(not(test), no_std)]
 #![deny(missing_docs)]
 
-pub mod i2c;
-pub mod serial;
-pub mod spi;
+// pub mod i2c;
+// pub mod serial;
+// pub mod spi;
 pub mod spi_halfduplex;
